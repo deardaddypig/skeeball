@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+
+<meta name="robots" content="noindex, nofollow, noai, noimageai">
+<meta name="googlebot" content="noindex, nofollow, noai">
+<meta name="GPTBot" content="noindex, nofollow">
+<meta name="ChatGPT-User" content="noindex, nofollow">
+<meta name="ClaudeBot" content="noindex, nofollow">
+<meta name="PerplexityBot" content="noindex, nofollow">
+
+<script>
+  // 禁用右鍵
+  document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+  });
+
+  // 禁用快捷鍵 (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S)
+  document.addEventListener('keydown', function(e) {
+    if (
+      e.key === 'F12' || 
+      (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j')) ||
+      (e.ctrlKey && (e.key === 'U' || e.key === 'u' || e.key === 'S' || e.key === 's'))
+    ) {
+      e.preventDefault();
+      return false;
+    }
+  });
+</script>
+
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Skee-Ball 3D</title>
+<style>
+:root{--bg:#14101f;--panel:#2a1a4a;--text:#fff4d6;--accent:#ffb703;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,"Noto Sans TC",sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:8px}
+h1{margin:2px 0 6px;font-size:20px;color:var(--accent);letter-spacing:2px}
+#board{width:100%;max-width:480px;display:flex;flex-direction:column;gap:4px}
+.row{background:var(--panel);border-radius:10px;padding:4px 10px;display:flex;align-items:center;gap:8px;border:2px solid transparent;font-size:13px}
+.row.cur{border-color:var(--accent)}
+.row b{min-width:30px}
+.balls{display:flex;gap:3px;flex:1}
+.b{width:24px;height:24px;border-radius:50%;background:#0006;font-size:10px;display:flex;align-items:center;justify-content:center}
+.b.on{background:#e63946;color:#fff;font-weight:700}
+.tot{font-weight:800;font-size:17px;color:var(--accent);min-width:44px;text-align:right}
+#wrap{position:relative;width:100%;max-width:480px;margin-top:8px}
+canvas{display:block;width:100%;aspect-ratio:3/4;border-radius:12px;touch-action:none;background:#aab4be}
+#hud{position:absolute;top:8px;left:8px;background:#000a;border-radius:10px;padding:6px 12px;font-size:13px;line-height:1.3;pointer-events:none}
+#hud strong{display:block;font-size:26px;color:var(--accent)}
+#hint{position:absolute;bottom:16px;left:0;right:0;text-align:center;font-weight:700;font-size:16px;color:#fff;text-shadow:0 2px 4px #000;pointer-events:none;animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.35;transform:translateY(-8px)}}
+#msg{margin:6px 0;font-size:15px;min-height:22px;text-align:center}
+#menu{position:fixed;inset:0;background:linear-gradient(transparent 35%,#000b);display:flex;align-items:flex-end;justify-content:center;padding-bottom:20px;z-index:5}
+#menu .box{background:var(--panel);padding:24px;border-radius:16px;text-align:center;max-width:320px;width:90%}
+button{background:var(--accent);color:#2a1a00;border:0;border-radius:10px;padding:10px 18px;font-size:16px;font-weight:700;margin:4px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>🎳 SKEE-BALL 3D</h1>
+<div id="board"></div>
+<div id="wrap"><canvas id="c"></canvas><div id="hud"></div><div id="hint">▲ 從下往上推滑</div></div>
+<div id="msg"></div>
+<div id="menu"><div class="box">
+  <h2 id="mt">擲球機</h2>
+  <p id="mp">每位玩家每局 7 顆球<br>手指按住畫面下方，往上快速推滑<br>方向決定左右，速度決定球飛多遠</p>
+  <div id="pbtns">選擇人數：<br><button data-n="1">1 人</button><button data-n="2">2 人</button><button data-n="3">3 人</button><button data-n="4">4 人</button></div>
+</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const BALLS=7,W=480,H=640,R0=.07,G=9.8,TH=60*Math.PI/180,BW=1.4,BL=3.6;
+const $=id=>document.getElementById(id), cv=$('c');
+const ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+ren.setPixelRatio(Math.min(devicePixelRatio||1,2)); ren.setSize(W,H,false); ren.shadowMap.enabled=true;
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0xaab4be); scene.fog=new THREE.Fog(0xaab4be,12,26);
+const cam=new THREE.PerspectiveCamera(58,W/H,.1,50); cam.position.set(0,1.5,6.2); cam.lookAt(0,2.0,-1.8);
+scene.add(new THREE.HemisphereLight(0xffffff,0x667788,.85));
+const sun=new THREE.DirectionalLight(0xffffff,.8); sun.position.set(3,8,6); sun.castShadow=true; sun.shadow.mapSize.set(1024,1024);
+Object.assign(sun.shadow.camera,{left:-6,right:6,top:10,bottom:-6,near:1,far:30}); sun.shadow.camera.updateProjectionMatrix(); scene.add(sun);
+const M=(c,o)=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.6,metalness:.05},o||{}));
+const tmp=new THREE.Vector3();
+
+// ---- 滑道（含末端上翹的跳台）
+const RR=1.5,RPHI=68*Math.PI/180,RL=RR*Math.sin(RPHI);   // 圓弧跳台，出口角 68°
+const rampY=z=>z>=RL?0:RR-Math.sqrt(RR*RR-(RL-z)*(RL-z));
+const rampSlope=z=>{if(z>=RL)return 0;const s=RL-z;return s/Math.sqrt(RR*RR-s*s)};
+const RHc=rampY(0);
+function strip(x0,x1,c,dy){
+  const g=new THREE.PlaneGeometry(x1-x0,6.4,1,60); g.rotateX(-Math.PI/2); g.translate((x0+x1)/2,0,3.2);
+  const p=g.attributes.position; for(let i=0;i<p.count;i++) p.setY(i,rampY(p.getZ(i))+(dy||0));
+  g.computeVertexNormals(); const m=new THREE.Mesh(g,M(c)); m.receiveShadow=true; scene.add(m);
+}
+strip(-1.3,1.3,0xd3dae1); strip(-1.78,-1.3,0xf2c200); strip(1.3,1.78,0xf2c200);
+strip(-1.58,-1.5,0x2a2a2e,.004); strip(1.5,1.58,0x2a2a2e,.004);
+const gnd=new THREE.Mesh(new THREE.PlaneGeometry(40,40),M(0x30343a)); gnd.rotation.x=-Math.PI/2; gnd.position.y=-.03; gnd.receiveShadow=true; scene.add(gnd);
+const lamp=new THREE.Mesh(new THREE.BoxGeometry(3,.05,.3),new THREE.MeshBasicMaterial({color:0xffffff})); lamp.position.set(0,5.4,-1); scene.add(lamp);
+
+// ---- 斜面球檯
+const board=new THREE.Group(); board.rotation.x=TH; scene.add(board);
+board.position.set(0,RHc+R0,0).addScaledVector(new THREE.Vector3(0,Math.cos(TH),Math.sin(TH)),-.28);
+const holes=[{x:-.95,u:3.05,r:.17,p:100,hh:.24,tall:true},{x:.95,u:3.05,r:.17,p:100,hh:.24,tall:true},{x:0,u:3.1,r:.13,p:50,hh:.07},{x:0,u:2.7,r:.17,p:40,hh:.07},{x:0,u:2.25,r:.21,p:30,hh:.07}];
+const rings=[{x:0,u:1.8,R:1.1,p:10,hh:.12},{x:0,u:2.0,R:.52,p:20,hh:.12}];
+const walls=rings.concat(holes.filter(h=>h.tall).map(h=>({x:h.x,u:h.u,R:h.r+.02,hh:h.hh,fo:true})));
+const sh=new THREE.Shape(); sh.moveTo(-BW,0); sh.lineTo(BW,0); sh.lineTo(BW,BL); sh.lineTo(-BW,BL); sh.closePath();
+holes.forEach(h=>{const p=new THREE.Path(); p.absarc(h.x,h.u,h.r,0,Math.PI*2,true); sh.holes.push(p)});
+const floor=new THREE.Mesh(new THREE.ShapeGeometry(sh,32),M(0xeef2f5)); floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; board.add(floor);
+const dark=M(0x1e2025,{side:THREE.DoubleSide}), white=M(0xf4f4f4);
+function tube(x,u,R,hh,y0,rim){
+  const t=new THREE.Mesh(new THREE.CylinderGeometry(R,R,hh,48,1,true),dark); t.position.set(x,y0+hh/2,-u); t.castShadow=t.receiveShadow=true; board.add(t);
+  if(rim){const r=new THREE.Mesh(new THREE.RingGeometry(R-.035,R+.02,48),white); r.rotation.x=-Math.PI/2; r.position.set(x,y0+hh+.002,-u); board.add(r);}
+}
+rings.forEach(r=>tube(r.x,r.u,r.R,.1,0,true));
+holes.forEach(h=>{
+  tube(h.x,h.u,h.r+.02,h.hh,0,true); tube(h.x,h.u,h.r,.4,-.4,false);
+  const b=new THREE.Mesh(new THREE.CircleGeometry(h.r,24),new THREE.MeshBasicMaterial({color:0x050505})); b.rotation.x=-Math.PI/2; b.position.set(h.x,-.4,-h.u); board.add(b);
+});
+function lab(txt,x,u,s){
+  const c=document.createElement('canvas'); c.width=c.height=128; const k=c.getContext('2d');
+  k.fillStyle='#111'; k.fillRect(0,32,128,64); k.strokeStyle='#ddd'; k.lineWidth=6; k.strokeRect(3,35,122,58);
+  k.fillStyle='#fff'; k.font='bold 52px Arial'; k.textAlign='center'; k.textBaseline='middle'; k.fillText(txt,64,66);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)})); sp.scale.set(s,s,1); sp.position.set(x,.07,-u); board.add(sp);
+}
+holes.forEach(h=>lab(h.p,h.x,h.u-h.r-.02,h.p===50?.2:.26)); lab(10,0,.64,.36); lab(20,0,1.42,.3);
+[-1,1].forEach(s=>{
+  const w=new THREE.Mesh(new THREE.BoxGeometry(.12,.3,BL),M(0x2a2d33)); w.position.set(s*(BW+.06),.15,-BL/2); board.add(w);
+  const r=new THREE.Mesh(new THREE.BoxGeometry(.5,1.1,BL+.4),M(0xb3202c)); r.position.set(s*(BW+.37),.4,-BL/2); board.add(r);
+});
+const back=new THREE.Mesh(new THREE.BoxGeometry(2.9,1.3,.1),M(0x1b1c20)); back.position.set(0,.55,-BL-.05); board.add(back);
+board.updateMatrixWorld(true);
+
+// ---- 頂部黑蓋改成顯示屏
+let best=[]; try{best=JSON.parse(localStorage.getItem('skeeTop3')||'[]')}catch(_){}
+function addBest(v){ if(v<=0)return; best.push(v); best.sort((a,b)=>b-a); best=best.slice(0,3); try{localStorage.setItem('skeeTop3',JSON.stringify(best))}catch(_){} }
+const sc=document.createElement('canvas'); sc.width=1024; sc.height=394; const sx=sc.getContext('2d');
+const scrTex=new THREE.CanvasTexture(sc);
+const scr=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1),new THREE.MeshBasicMaterial({map:scrTex})); scr.position.set(0,.62,-BL+.004); board.add(scr);
+let scrMode='top3',scrInfo={},scrDirty=true,scrAct=false,shake=0;
+function showScore(pts){
+  scrMode='score'; scrInfo={pts,t0:performance.now(),label:`P${cur+1} · BALL ${scores[cur].length}/${BALLS}`};
+  scrInfo.parts=pts===100?Array.from({length:90},()=>({a:Math.random()*6.283,s:150+Math.random()*650,c:`hsl(${Math.random()*60},100%,${50+Math.random()*30}%)`,r:4+Math.random()*9})):[];
+  if(pts===100) shake=1; scrDirty=true;
+}
+function drawScreen(now){
+  const w=1024,h=394; sx.fillStyle='#05070d'; sx.fillRect(0,0,w,h);
+  sx.strokeStyle='#ffb703'; sx.lineWidth=8; sx.strokeRect(10,10,w-20,h-20);
+  sx.textAlign='center'; sx.textBaseline='middle';
+  if(scrMode==='top3'){
+    sx.fillStyle='#ffb703'; sx.font='bold 56px Arial,sans-serif'; sx.fillText('★ TOP 3 ★',w/2,62);
+    const med=['#ffd700','#c0c0c0','#cd7f32'];
+    for(let i=0;i<3;i++){const x=170+i*342; sx.fillStyle=med[i]; sx.font='bold 46px Arial,sans-serif'; sx.fillText(['1ST','2ND','3RD'][i],x,150);
+      sx.fillStyle='#fff'; sx.font='bold 120px Arial,sans-serif'; sx.fillText(best[i]!=null?best[i]:'--',x,265);}
+    return;
+  }
+  const t=(now-scrInfo.t0)/1000, p=scrInfo.pts, big=p===100;
+  if(big){
+    sx.fillStyle=`rgba(255,120,0,${Math.max(0,.55-t*.3)})`; sx.fillRect(12,12,w-24,h-24);
+    sx.strokeStyle=`rgba(255,230,120,${Math.max(0,1-t*1.4)})`; sx.lineWidth=14; sx.beginPath(); sx.arc(w/2,220,t*720,0,7); sx.stroke();
+    for(const q of scrInfo.parts){
+      const al=Math.max(0,1-t/1.8); if(al<=0)continue; const d=q.s*t;
+      sx.globalAlpha=al; sx.fillStyle=q.c; sx.beginPath(); sx.arc(w/2+Math.cos(q.a)*d,220+Math.sin(q.a)*d*.6+200*t*t,Math.max(.5,q.r*(1-t/2.4)),0,7); sx.fill();
+    }
+    sx.globalAlpha=1;
+  }
+  sx.fillStyle='#8fd3ff'; sx.font='bold 46px Arial,sans-serif'; sx.fillText(scrInfo.label,w/2,52);
+  const k=1+Math.max(0,.4-t)*1.2, txt=p?'+'+p:'MISS';
+  sx.save(); sx.translate(w/2,225); sx.scale(k,k);
+  sx.font=`900 ${p?(big?210:230):150}px Arial,sans-serif`; sx.lineWidth=10; sx.lineJoin='round'; sx.strokeStyle='#000'; sx.strokeText(txt,0,0);
+  sx.fillStyle=big?`hsl(${(t*700)%360},100%,60%)`:p?'#7CFC9A':'#ff6b6b'; sx.fillText(txt,0,0); sx.restore();
+  if(big){sx.fillStyle='#fff'; sx.font='bold 38px Arial,sans-serif'; sx.fillText('★ BULLSEYE ★',w/2,h-36)}
+}
+
+// ---- 球
+const ballMesh=new THREE.Mesh(new THREE.SphereGeometry(R0,32,24),M(0xb8763a,{roughness:.35})); ballMesh.castShadow=true; scene.add(ballMesh);
+
+// ---- 遊戲狀態
+let N=1,scores=[],cur=0,ball=0,over=false;
+const S={mode:'idle',x:0,z:2.6};
+function say(t){$('msg').textContent=t}
+function total(a){return a.reduce((s,v)=>s+v,0)}
+function renderBoard(){
+  const el=$('board'); el.innerHTML='';
+  scores.forEach((s,i)=>{
+    const d=document.createElement('div'); d.className='row'+(i===cur&&!over?' cur':'');
+    let dots=''; for(let k=0;k<BALLS;k++) dots+=`<div class="b${k<s.length?' on':''}">${k<s.length?s[k]:''}</div>`;
+    d.innerHTML=`<b>P${i+1}</b><div class="balls">${dots}</div><div class="tot">${total(s)}</div>`; el.appendChild(d);
+  });
+  const s=scores[cur]||[]; $('hud').innerHTML=`玩家 ${cur+1} · 第 ${Math.min(BALLS,s.length+1)}/${BALLS} 球<strong>${total(s)}</strong>`;
+}
+function start(n){
+  N=n; scores=Array.from({length:n},()=>[]); cur=0; ball=0; over=false; scrMode='top3'; scrDirty=true; $('menu').style.display='none';
+  renderBoard(); resetBall(); say(`玩家 1：從下往上推滑發球`);
+}
+document.querySelectorAll('#pbtns button').forEach(b=>b.onclick=()=>start(+b.dataset.n));
+function resetBall(){Object.assign(S,{mode:'idle',x:0,z:2.6,v:0,vx:0}); ballMesh.visible=true; $('hint').style.display='block'; place();}
+function place(){
+  if(S.mode==='lane'||S.mode==='idle') ballMesh.position.set(S.x,rampY(S.z)+R0,S.z);
+  else{tmp.set(S.bx,S.bh,-S.bu); board.localToWorld(tmp); ballMesh.position.copy(tmp);}
+}
+function finish(pts){
+  if(S.mode==='done')return; S.mode='done';
+  scores[cur].push(pts); ball++; showScore(pts); say(pts?`進入 ${pts} 分區！`:'球滾回去了…'); renderBoard();
+  if(!pts) setTimeout(()=>{ballMesh.visible=false},300);
+  setTimeout(next,1300);
+}
+function next(){
+  if(scores[cur].length>=BALLS){ cur++; if(cur>=N){endGame();return;} }
+  renderBoard(); resetBall(); say(`玩家 ${cur+1}：第 ${scores[cur].length+1}/${BALLS} 球，從下往上推滑`);
+}
+function endGame(){
+  over=true; cur=N-1; renderBoard(); const tots=scores.map(total), max=Math.max(...tots); tots.forEach(addBest); scrMode='top3'; scrDirty=true;
+  const w=tots.map((v,i)=>v===max?i+1:0).filter(Boolean);
+  $('mt').textContent=N===1?`總分 ${max}`:(w.length>1?`平手！P${w.join(' & P')}`:`P${w[0]} 獲勝！`);
+  $('mp').innerHTML=tots.map((v,i)=>`P${i+1}: ${v} 分`).join('<br>');
+  $('pbtns').innerHTML='再玩一次：<br>'+[1,2,3,4].map(n=>`<button data-n="${n}">${n} 人</button>`).join('');
+  document.querySelectorAll('#pbtns button').forEach(b=>b.onclick=()=>start(+b.dataset.n));
+  $('menu').style.display='flex'; say('');
+}
+
+// ---- 滑動輸入
+let trail=[],drag=false;
+const pos=e=>{const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height,t:performance.now()}};
+cv.onpointerdown=e=>{
+  if(S.mode!=='idle')return; e.preventDefault(); const p=pos(e); if(p.y<H*.4)return;
+  drag=true; trail=[p]; S.x=Math.max(-1,Math.min(1,(p.x-W/2)/(W/2)*1.1)); place();
+  try{cv.setPointerCapture(e.pointerId)}catch(_){}
+};
+cv.onpointermove=e=>{if(drag)trail.push(pos(e))};
+cv.onpointercancel=()=>{drag=false;trail=[]};
+cv.onpointerup=e=>{
+  if(!drag)return; drag=false; const end=pos(e); trail.push(end);
+  const a=trail.filter(p=>end.t-p.t<=160)[0], dy=a.y-end.y, dx=end.x-a.x, dt=Math.max(16,end.t-a.t);
+  if(trail[0].y-end.y<40||dy<8){say('滑動太短，請從下往上快速推滑');trail=[];return}
+  const speed=Math.hypot(dx,dy)/dt, slope=Math.max(-.6,Math.min(.6,dx/dy));
+  const ve=3+(Math.min(2.2,Math.max(.5,speed))-.5)/1.7*5.8;
+  S.v=Math.sqrt(ve*ve+2*G*RHc)*(1+(Math.random()-.5)*.03);
+  S.vx=S.v*slope*.5; S.mode='lane'; $('hint').style.display='none'; say(''); trail=[];
+};
+
+// ---- 物理
+function laneStep(dt){
+  const z0=S.z; S.z-=S.v*dt/Math.sqrt(1+Math.pow(rampSlope(S.z),2)); S.x+=S.vx*dt; S.v*=1-.2*dt;
+  if(Math.abs(S.x)>1.15){S.x=Math.sign(S.x)*1.15;S.vx*=-.5}
+  const dy=rampY(S.z)-rampY(z0); S.v=Math.sqrt(Math.max(.4,S.v*S.v-2*G*dy));
+  if(S.z<=0) launch();
+}
+function launch(){
+  const a=Math.atan(rampSlope(0)), vel=new THREE.Vector3(S.vx,S.v*Math.sin(a),-S.v*Math.cos(a));
+  const t=new THREE.Vector3(0,Math.sin(TH),-Math.cos(TH)), n=new THREE.Vector3(0,Math.cos(TH),Math.sin(TH));
+  const rel=new THREE.Vector3(S.x,rampY(0)+R0-board.position.y,-board.position.z);
+  Object.assign(S,{mode:'board',bx:S.x,bu:rel.dot(t),bh:rel.dot(n),vbx:S.vx,vu:vel.dot(t),vh:vel.dot(n),hits:0,rest:0,T:0,side:[]});
+}
+function zone(){
+  const d=r=>Math.hypot(S.bx-r.x,S.bu-r.u);
+  return d(rings[1])<rings[1].R?20:d(rings[0])<rings[0].R?10:0;
+}
+function boardStep(dt){
+  S.T+=dt;
+  if(S.mode==='sink'){
+    S.st+=dt; const k=Math.min(1,12*dt); S.bx+=(S.hx-S.bx)*k; S.bu+=(S.hu-S.bu)*k;
+    S.vh-=G*dt; S.bh=Math.max(-.3,S.bh+S.vh*dt); if(S.st>.7) finish(S.sp); return;
+  }
+  S.vh-=G*Math.cos(TH)*dt; S.vu-=G*Math.sin(TH)*dt; S.bx+=S.vbx*dt; S.bu+=S.vu*dt; S.bh+=S.vh*dt;
+  const over=S.bu>=0&&Math.abs(S.bx)<BW;
+  if(over&&S.bh<.3){
+    for(const h of holes) if(Math.hypot(S.bx-h.x,S.bu-h.u)<(h.tall?h.r*.8:h.r*.9)&&S.bh<(h.tall?h.hh+.04:R0+.04)){
+      Object.assign(S,{mode:'sink',st:0,hx:h.x,hu:h.u,sp:h.p}); S.vh=Math.min(S.vh,0); return;
+    }
+  }
+  let contact=false;
+  if(over&&S.bh<=R0){
+    S.bh=R0;
+    if(S.vh<-.6){const k=S.hits++?.8:.28; S.vu*=k; S.vbx*=k+.3; S.vh=-S.vh*.3} else {S.vh=0; contact=true}
+    if(contact){const f=1-1.5*dt; S.vu*=f; S.vbx*=f}
+  }
+  if(S.bu>=0&&Math.abs(S.bx)>BW-R0){S.bx=Math.sign(S.bx)*(BW-R0); S.vbx*=-.4}
+  if(S.bu>BL-R0){S.bu=BL-R0; S.vu=-Math.abs(S.vu)*.4}
+  walls.forEach((r,i)=>{
+    if(S.bh>r.hh){S.side[i]=null;return}
+    const dx=S.bx-r.x,du=S.bu-r.u,d=Math.hypot(dx,du)||1e-6,nx=dx/d,nu=du/d,band=.03+R0;
+    if(S.side[i]==null) S.side[i]=r.fo?false:d<r.R;
+    if(Math.abs(d-r.R)<band){
+      const inside=S.side[i], td=inside?r.R-band:r.R+band;
+      S.bx=r.x+nx*td; S.bu=r.u+nu*td;
+      const vr=S.vbx*nx+S.vu*nu;
+      if((inside&&vr>0)||(!inside&&vr<0)){S.vbx-=1.35*vr*nx; S.vu-=1.35*vr*nu}
+    } else S.side[i]=r.fo?false:d<r.R;
+  });
+  if(contact&&Math.hypot(S.vbx,S.vu)<.12){S.rest+=dt; if(S.rest>.5) finish(zone())} else S.rest=0;
+  if(S.bh<-2.5) finish(0); else if(S.T>9) finish(zone());
+}
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.033,(now-last)/1000); last=now;
+  if(S.mode==='lane') laneStep(dt);
+  else if(S.mode==='board'||S.mode==='sink'){const n=Math.ceil(dt*240); for(let i=0;i<n&&(S.mode==='board'||S.mode==='sink');i++) boardStep(dt/n)}
+  const act=scrMode==='score'&&now-scrInfo.t0<(scrInfo.pts===100?2600:700);
+  if(scrDirty||act||scrAct){drawScreen(now); scrTex.needsUpdate=true; scrDirty=false} scrAct=act;
+  if(shake>0){cam.position.set((Math.random()-.5)*shake*.25,1.5+(Math.random()-.5)*shake*.25,6.2); shake=Math.max(0,shake-dt*1.6); if(!shake)cam.position.set(0,1.5,6.2)}
+  place(); ren.render(scene,cam); requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
